@@ -107,9 +107,10 @@ interface Props {
   pinDropMode: boolean
   onCenterChange: (lat: number, lng: number) => void
   onPinDropped: (lat: number, lng: number) => void
+  onNearbyUpdate?: (venues: SearchResult[]) => void
 }
 
-export default function MapComponent({ venues, focusVenue, selectedDay, onVenueClick, onNearbyClick, pinDropMode, onCenterChange, onPinDropped }: Props) {
+export default function MapComponent({ venues, focusVenue, selectedDay, onVenueClick, onNearbyClick, pinDropMode, onCenterChange, onPinDropped, onNearbyUpdate }: Props) {
   const divRef       = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<L.Map | null>(null)
   const nearbyLayer  = useRef<L.LayerGroup | null>(null)
@@ -121,6 +122,7 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
   const onCenterChangeRef  = useRef(onCenterChange)
   const onPinDroppedRef    = useRef(onPinDropped)
   const pinDropModeRef     = useRef(pinDropMode)
+  const onNearbyUpdateRef  = useRef(onNearbyUpdate)
   const [nearbyVenues, setNearbyVenues] = useState<SearchResult[]>([])
 
   useEffect(() => { onClickRef.current         = onVenueClick    }, [onVenueClick])
@@ -128,10 +130,15 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
   useEffect(() => { onCenterChangeRef.current  = onCenterChange  }, [onCenterChange])
   useEffect(() => { onPinDroppedRef.current    = onPinDropped    }, [onPinDropped])
   useEffect(() => { pinDropModeRef.current     = pinDropMode     }, [pinDropMode])
+  useEffect(() => { onNearbyUpdateRef.current  = onNearbyUpdate  }, [onNearbyUpdate])
 
   const fetchNearby = useCallback(async (map: L.Map) => {
     if (fetchingRef.current) return
-    if (map.getZoom() < NEARBY_MIN_ZOOM) { setNearbyVenues([]); return }
+    if (map.getZoom() < NEARBY_MIN_ZOOM) {
+      setNearbyVenues([])
+      onNearbyUpdateRef.current?.([])
+      return
+    }
 
     fetchingRef.current = true
     const b = map.getBounds()
@@ -144,7 +151,11 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
 
     try {
       const res = await fetch(`/api/nearby?bbox=${encodeURIComponent(bbox)}`)
-      if (res.ok) setNearbyVenues(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setNearbyVenues(data)
+        onNearbyUpdateRef.current?.(data)
+      }
     } finally {
       fetchingRef.current = false
     }

@@ -31,6 +31,7 @@ export default function Home() {
   const [mapCenter, setMapCenter]   = useState(HAGGERSTON)
   const [pinDropMode, setPinDropMode] = useState(false)
   const [droppedPin, setDroppedPin]  = useState<{ lat: number; lng: number } | null>(null)
+  const [nearbyVenues, setNearbyVenues] = useState<SearchResult[]>([])
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -159,6 +160,7 @@ export default function Home() {
         <SearchPanel
           selectedDay={selectedDay}
           venues={venues}
+          nearbyVenues={nearbyVenues}
           loading={loadingVenues}
           onVenueSelect={setFocusVenue}
           onOpenDeals={handleOpenDeals}
@@ -186,6 +188,7 @@ export default function Home() {
           pinDropMode={pinDropMode}
           onCenterChange={(lat, lng) => setMapCenter({ lat, lng })}
           onPinDropped={handlePinDropped}
+          onNearbyUpdate={setNearbyVenues}
         />
       </div>
 

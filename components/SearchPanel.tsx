@@ -20,6 +20,7 @@ function venueEmoji(type: string) {
 interface Props {
   selectedDay: DayOfWeek | 'all'
   venues: Venue[]
+  nearbyVenues: SearchResult[]
   loading: boolean
   onVenueSelect: (venue: SearchResult | null) => void
   onOpenDeals: (venue: Venue) => void
@@ -31,6 +32,7 @@ interface Props {
 export default function SearchPanel({
   selectedDay,
   venues,
+  nearbyVenues,
   loading,
   onVenueSelect,
   onOpenDeals,
@@ -90,18 +92,23 @@ export default function SearchPanel({
     inputRef.current?.focus()
   }
 
-  const handleResultClick = (result: SearchResult) => {
+  const openVenue = (result: SearchResult) => {
     onVenueSelect(result)
-  }
-
-  const handleAddDeal = (result: SearchResult, e: React.MouseEvent) => {
-    e.stopPropagation()
     const existing = venueByOsmId.get(result.osm_id)
     if (existing) {
       onOpenDeals(existing)
     } else {
       onAddFromSearch(result)
     }
+  }
+
+  const handleResultClick = (result: SearchResult) => {
+    openVenue(result)
+  }
+
+  const handleAddDeal = (result: SearchResult, e: React.MouseEvent) => {
+    e.stopPropagation()
+    openVenue(result)
   }
 
   const isSearchMode = query.trim().length >= 2
@@ -213,68 +220,97 @@ export default function SearchPanel({
           </>
         ) : (
           <>
-            {/* Saved venues — filter client-side to only show venues with deals */}
+            {/* Nearby venues sorted by distance from map center */}
             {(() => {
-              const displayVenues = venues.filter((v) =>
-                selectedDay === 'all'
-                  ? (v.deals?.length ?? 0) > 0
-                  : v.deals?.some((d) => d.day_of_week === selectedDay)
-              )
+              // Merge nearby venues with saved deal data, sort by distance
+              const sidebarItems = nearbyVenues
+                .map((nv) => {
+                  const saved = venueByOsmId.get(nv.osm_id) ?? null
+                  return { ...nv, deals: saved?.deals ?? [], savedVenue: saved }
+                })
+                .sort((a, b) => {
+                  const da = (a.lat - mapCenter.lat) ** 2 + (a.lng - mapCenter.lng) ** 2
+                  const db = (b.lat - mapCenter.lat) ** 2 + (b.lng - mapCenter.lng) ** 2
+                  return da - db
+                })
+
+              const filtered = selectedDay === 'all'
+                ? sidebarItems
+                : sidebarItems.filter((item) => item.deals.some((d) => d.day_of_week === selectedDay))
+
               return (
                 <>
-            <div className="px-3 py-2 text-xs text-slate-500 font-medium uppercase tracking-widest">
-              {loading ? 'Loading…' : (
-                selectedDay === 'all'
-                  ? `${displayVenues.length} venue${displayVenues.length !== 1 ? 's' : ''} with deals`
-                  : `${displayVenues.length} venue${displayVenues.length !== 1 ? 's' : ''} with deals on ${selectedDay}`
-              )}
-            </div>
-
-            {!loading && displayVenues.length === 0 && (
-              <div className="px-4 py-10 text-center">
-                <div className="text-4xl mb-3">🍺</div>
-                <p className="text-slate-400 text-sm font-medium">No deals here yet!</p>
-                <p className="text-slate-600 text-xs mt-1">
-                  Search for a venue above and click <span className="text-amber-500">+ Deal</span> to add the first one.
-                </p>
-              </div>
-            )}
-
-            {displayVenues.map((venue) => {
-              const days = [...new Set(venue.deals?.map((d) => d.day_of_week) ?? [])]
-              return (
-                <button
-                  key={venue.id}
-                  onClick={() => onOpenDeals(venue)}
-                  className="w-full text-left p-3 border-b border-slate-800/60 hover:bg-slate-800/60 transition-colors group"
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="text-base mt-0.5 flex-shrink-0">
-                      {venueEmoji(venue.type)}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-100 truncate group-hover:text-white">
-                        {venue.name}
-                      </p>
-                      <p className="text-xs text-slate-500 truncate">{venue.address}</p>
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {days.map((d) => (
-                          <span
-                            key={d}
-                            className={`text-xs px-1.5 py-0.5 rounded capitalize font-medium ${DAY_COLORS[d] ?? 'bg-slate-700 text-slate-400'}`}
-                          >
-                            {d.slice(0, 3)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <span className="text-xs text-slate-600 flex-shrink-0 mt-0.5">
-                      {venue.deals?.length ?? 0} deal{(venue.deals?.length ?? 0) !== 1 ? 's' : ''}
-                    </span>
+                  <div className="px-3 py-2 text-xs text-slate-500 font-medium uppercase tracking-widest">
+                    {loading ? 'Loading…' : nearbyVenues.length === 0
+                      ? 'Move map to load venues'
+                      : selectedDay === 'all'
+                        ? `${sidebarItems.length} venue${sidebarItems.length !== 1 ? 's' : ''} nearby`
+                        : `${filtered.length} venue${filtered.length !== 1 ? 's' : ''} with deals on ${selectedDay}`
+                    }
                   </div>
-                </button>
-              )
-            })}
+
+                  {!loading && nearbyVenues.length === 0 && (
+                    <div className="px-4 py-10 text-center">
+                      <div className="text-4xl mb-3">🗺️</div>
+                      <p className="text-slate-400 text-sm font-medium">No venues in view</p>
+                      <p className="text-slate-600 text-xs mt-1">Zoom in or pan to a London area to see venues.</p>
+                    </div>
+                  )}
+
+                  {!loading && nearbyVenues.length > 0 && filtered.length === 0 && selectedDay !== 'all' && (
+                    <div className="px-4 py-10 text-center">
+                      <div className="text-4xl mb-3">🍺</div>
+                      <p className="text-slate-400 text-sm font-medium">No deals on {selectedDay}</p>
+                      <p className="text-slate-600 text-xs mt-1">
+                        Click any venue to add a deal for that day.
+                      </p>
+                    </div>
+                  )}
+
+                  {(selectedDay === 'all' ? sidebarItems : filtered).map((item) => {
+                    const relevantDeals = selectedDay === 'all'
+                      ? item.deals
+                      : item.deals.filter((d) => d.day_of_week === selectedDay)
+                    const days = [...new Set(relevantDeals.map((d) => d.day_of_week))]
+
+                    return (
+                      <button
+                        key={item.osm_id}
+                        onClick={() => {
+                          if (item.savedVenue) onOpenDeals(item.savedVenue)
+                          else onAddFromSearch(item)
+                        }}
+                        className="w-full text-left p-3 border-b border-slate-800/60 hover:bg-slate-800/60 transition-colors group"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-base mt-0.5 flex-shrink-0">{venueEmoji(item.type)}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-100 truncate group-hover:text-white">
+                              {item.name}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">{item.address}</p>
+                            {days.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {days.map((d) => (
+                                  <span
+                                    key={d}
+                                    className={`text-xs px-1.5 py-0.5 rounded capitalize font-medium ${DAY_COLORS[d] ?? 'bg-slate-700 text-slate-400'}`}
+                                  >
+                                    {d.slice(0, 3)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {item.deals.length > 0 && (
+                            <span className="text-xs text-slate-600 flex-shrink-0 mt-0.5">
+                              {item.deals.length} deal{item.deals.length !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
                 </>
               )
             })()}
