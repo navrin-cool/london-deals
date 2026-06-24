@@ -60,29 +60,47 @@ export default function SearchPanel({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const NAMES = ['Navrin', 'Eilish', 'Tayla', 'Nic']
+
   const [activeTab, setActiveTab] = useState<'nearby' | 'mylist'>('nearby')
-  const [myList, setMyList] = useState<Venue[]>([])
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set())
+  const [combinedList, setCombinedList] = useState<{ venue: Venue; addedBy: string[] }[]>([])
   const [myListLoading, setMyListLoading] = useState(false)
-  const [visitorName, setVisitorName] = useState('')
   const debounceRef = useRef<NodeJS.Timeout>()
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const name = localStorage.getItem('ld_visitor_name') ?? ''
-    setVisitorName(name)
+    if (name && NAMES.includes(name)) {
+      setSelectedNames(new Set([name]))
+    }
   }, [])
 
   useEffect(() => {
-    if (activeTab !== 'mylist') return
-    const name = localStorage.getItem('ld_visitor_name') ?? ''
-    if (!name) return
+    if (activeTab !== 'mylist' || selectedNames.size === 0) {
+      setCombinedList([])
+      return
+    }
     setMyListLoading(true)
-    fetch(`/api/want-to-visit?visitor_name=${encodeURIComponent(name)}`)
-      .then((r) => r.json())
-      .then((data) => setMyList(Array.isArray(data) ? data : []))
-      .catch(() => setMyList([]))
-      .finally(() => setMyListLoading(false))
-  }, [activeTab])
+    Promise.all(
+      [...selectedNames].map((name) =>
+        fetch(`/api/want-to-visit?visitor_name=${encodeURIComponent(name)}`)
+          .then((r) => r.json())
+          .then((venues) => ({ name, venues: Array.isArray(venues) ? venues : [] }))
+          .catch(() => ({ name, venues: [] }))
+      )
+    ).then((results) => {
+      const venueMap = new Map<string, { venue: Venue; addedBy: string[] }>()
+      for (const { name, venues } of results) {
+        for (const venue of venues as Venue[]) {
+          const existing = venueMap.get(venue.id)
+          if (existing) { existing.addedBy.push(name) }
+          else { venueMap.set(venue.id, { venue, addedBy: [name] }) }
+        }
+      }
+      setCombinedList([...venueMap.values()])
+    }).finally(() => setMyListLoading(false))
+  }, [activeTab, selectedNames])
 
   // Build a set of known osm_ids for quick lookup
   const knownOsmIds = new Set(venues.map((v) => v.osm_id).filter(Boolean))
@@ -215,31 +233,61 @@ export default function SearchPanel({
       <div className="flex-1 overflow-y-auto overscroll-contain">
         {activeTab === 'mylist' ? (
           <>
-            {!visitorName && (
+            {/* Name selector */}
+            <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2">
+              {NAMES.map((name) => {
+                const active = selectedNames.has(name)
+                return (
+                  <button
+                    key={name}
+                    onClick={() => {
+                      setSelectedNames((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(name)) next.delete(name)
+                        else next.add(name)
+                        return next
+                      })
+                    }}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
+                      active
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                        : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                    }`}
+                  >
+                    {active ? '★' : '☆'} {name}
+                  </button>
+                )
+              })}
+            </div>
+
+            {selectedNames.size === 0 && (
               <div className="px-4 py-10 text-center">
                 <div className="text-4xl mb-3">★</div>
-                <p className="text-slate-400 text-sm font-medium">Your list is empty</p>
-                <p className="text-slate-600 text-xs mt-1">Click &ldquo;Want to visit&rdquo; on a venue to start your list.</p>
+                <p className="text-slate-400 text-sm font-medium">Select a name above</p>
+                <p className="text-slate-600 text-xs mt-1">See whose list you want to browse.</p>
               </div>
             )}
-            {visitorName && myListLoading && (
+
+            {selectedNames.size > 0 && myListLoading && (
               <div className="px-4 py-6 text-center">
-                <p className="text-slate-500 text-sm animate-pulse">Loading your list…</p>
+                <p className="text-slate-500 text-sm animate-pulse">Loading…</p>
               </div>
             )}
-            {visitorName && !myListLoading && myList.length === 0 && (
+
+            {selectedNames.size > 0 && !myListLoading && combinedList.length === 0 && (
               <div className="px-4 py-10 text-center">
-                <div className="text-4xl mb-3">★</div>
-                <p className="text-slate-400 text-sm font-medium">No venues saved yet</p>
-                <p className="text-slate-600 text-xs mt-1">Click &ldquo;Want to visit&rdquo; on any venue to add it here.</p>
+                <div className="text-4xl mb-3">☆</div>
+                <p className="text-slate-400 text-sm font-medium">No saved venues yet</p>
+                <p className="text-slate-600 text-xs mt-1">Click &ldquo;Want to visit&rdquo; on any venue to save it.</p>
               </div>
             )}
-            {visitorName && !myListLoading && myList.length > 0 && (
+
+            {selectedNames.size > 0 && !myListLoading && combinedList.length > 0 && (
               <>
                 <div className="px-3 py-2 text-xs text-slate-500 font-medium uppercase tracking-widest">
-                  {myList.length} saved venue{myList.length !== 1 ? 's' : ''}
+                  {combinedList.length} venue{combinedList.length !== 1 ? 's' : ''}
                 </div>
-                {myList.map((venue) => (
+                {combinedList.map(({ venue, addedBy }) => (
                   <button
                     key={venue.id}
                     onClick={() => onOpenDeals(venue)}
@@ -250,15 +298,17 @@ export default function SearchPanel({
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-100 truncate group-hover:text-white">
                           {venue.name}
-                          {wtvCounts[venue.id] != null && wtvCounts[venue.id] > 0 && (
-                            <span className="ml-1.5 text-amber-400 text-xs">★{wtvCounts[venue.id]}</span>
-                          )}
                         </p>
                         <p className="text-xs text-slate-500 truncate">{venue.address}</p>
-                        {venue.deals && venue.deals.length > 0 && (
-                          <p className="text-xs text-slate-600 mt-0.5">{venue.deals.length} deal{venue.deals.length !== 1 ? 's' : ''}</p>
-                        )}
+                        <p className="text-xs text-amber-500/70 mt-0.5">
+                          ★ {addedBy.join(', ')}
+                        </p>
                       </div>
+                      {venue.deals && venue.deals.length > 0 && (
+                        <span className="text-xs text-slate-600 flex-shrink-0 mt-0.5">
+                          {venue.deals.length} deal{venue.deals.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
                   </button>
                 ))}

@@ -62,7 +62,7 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
   const [isOnMyList, setIsOnMyList] = useState(false)
   const [visitorName, setVisitorName] = useState('')
   const [showNamePrompt, setShowNamePrompt] = useState(false)
-  const [nameInput, setNameInput] = useState('')
+  const [wtvError, setWtvError] = useState('')
 
   // — Comment state —
   const [comments, setComments] = useState<Comment[]>([])
@@ -127,33 +127,48 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
+  const NAMES = ['Navrin', 'Eilish', 'Tayla', 'Nic']
+
   // — Want to visit handlers —
-  const handleToggleWtv = () => {
+  const handleToggleWtv = async () => {
     if (!visitorName) { setShowNamePrompt(true); return }
     const next = !isOnMyList
     setIsOnMyList(next)
     setWtvCount((c) => c + (next ? 1 : -1))
-    fetch('/api/want-to-visit', {
-      method: next ? 'POST' : 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ venue_id: venue.id, visitor_name: visitorName }),
-    })
+    setWtvError('')
+    try {
+      const res = await fetch('/api/want-to-visit', {
+        method: next ? 'POST' : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venue_id: venue.id, visitor_name: visitorName }),
+      })
+      if (!res.ok) throw new Error('Failed')
+    } catch {
+      setIsOnMyList(!next)
+      setWtvCount((c) => c + (next ? -1 : 1))
+      setWtvError('Could not save — try again')
+    }
   }
 
-  const handleSaveName = () => {
-    const name = nameInput.trim()
-    if (!name) return
+  const handleSelectName = async (name: string) => {
     setVisitorName(name)
     localStorage.setItem('ld_visitor_name', name)
-    setNameInput('')
     setShowNamePrompt(false)
+    setWtvError('')
     setIsOnMyList(true)
     setWtvCount((c) => c + 1)
-    fetch('/api/want-to-visit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ venue_id: venue.id, visitor_name: name }),
-    })
+    try {
+      const res = await fetch('/api/want-to-visit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venue_id: venue.id, visitor_name: name }),
+      })
+      if (!res.ok) throw new Error('Failed')
+    } catch {
+      setIsOnMyList(false)
+      setWtvCount((c) => c - 1)
+      setWtvError('Could not save — try again')
+    }
   }
 
   // — Deal handlers —
@@ -299,34 +314,30 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
         </div>
 
         {/* Want to visit */}
-        <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-3">
+        <div className="px-5 py-3 border-b border-slate-800">
           {showNamePrompt ? (
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                type="text"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveName() }}
-                placeholder="Your name"
-                autoFocus
-                className="flex-1 bg-slate-800 border border-slate-700 focus:border-amber-500/50 text-white placeholder-slate-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-colors"
-              />
-              <button
-                onClick={handleSaveName}
-                disabled={!nameInput.trim()}
-                className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setShowNamePrompt(false)}
-                className="text-slate-500 hover:text-slate-300 text-sm"
-              >
-                Cancel
-              </button>
+            <div>
+              <p className="text-xs text-slate-400 mb-2">Who are you?</p>
+              <div className="flex gap-2 flex-wrap">
+                {NAMES.map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => handleSelectName(name)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-amber-500/20 border border-slate-700 hover:border-amber-500/40 text-slate-300 hover:text-amber-400 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowNamePrompt(false)}
+                  className="px-3 py-1.5 text-slate-600 hover:text-slate-400 text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           ) : (
-            <>
+            <div className="flex items-center gap-3">
               <button
                 onClick={handleToggleWtv}
                 className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${
@@ -334,14 +345,15 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
                 }`}
               >
                 <span className="text-base">{isOnMyList ? '★' : '☆'}</span>
-                {isOnMyList ? 'On my list' : 'Want to visit'}
+                {isOnMyList ? `On ${visitorName}'s list` : 'Want to visit'}
               </button>
               {wtvCount > 0 && (
                 <span className="text-xs text-slate-500">
-                  {wtvCount} {wtvCount === 1 ? 'person wants' : 'people want'} to visit
+                  {wtvCount} {wtvCount === 1 ? 'person' : 'people'}
                 </span>
               )}
-            </>
+              {wtvError && <span className="text-xs text-red-400">{wtvError}</span>}
+            </div>
           )}
         </div>
 
