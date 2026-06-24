@@ -191,16 +191,24 @@ export default function SearchPanel({
           </>
         ) : (
           <>
-            {/* Saved venues */}
+            {/* Saved venues — filter client-side to only show venues with deals */}
+            {(() => {
+              const displayVenues = venues.filter((v) =>
+                selectedDay === 'all'
+                  ? (v.deals?.length ?? 0) > 0
+                  : v.deals?.some((d) => d.day_of_week === selectedDay)
+              )
+              return (
+                <>
             <div className="px-3 py-2 text-xs text-slate-500 font-medium uppercase tracking-widest">
               {loading ? 'Loading…' : (
                 selectedDay === 'all'
-                  ? `${venues.length} venue${venues.length !== 1 ? 's' : ''} with deals`
-                  : `${venues.length} venue${venues.length !== 1 ? 's' : ''} — ${selectedDay}`
+                  ? `${displayVenues.length} venue${displayVenues.length !== 1 ? 's' : ''} with deals`
+                  : `${displayVenues.length} venue${displayVenues.length !== 1 ? 's' : ''} with deals on ${selectedDay}`
               )}
             </div>
 
-            {!loading && venues.length === 0 && (
+            {!loading && displayVenues.length === 0 && (
               <div className="px-4 py-10 text-center">
                 <div className="text-4xl mb-3">🍺</div>
                 <p className="text-slate-400 text-sm font-medium">No deals here yet!</p>
@@ -210,7 +218,7 @@ export default function SearchPanel({
               </div>
             )}
 
-            {venues.map((venue) => {
+            {displayVenues.map((venue) => {
               const days = [...new Set(venue.deals?.map((d) => d.day_of_week) ?? [])]
               return (
                 <button
@@ -245,6 +253,9 @@ export default function SearchPanel({
                 </button>
               )
             })}
+                </>
+              )
+            })()}
           </>
         )}
       </div>

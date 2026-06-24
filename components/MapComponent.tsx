@@ -1,15 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Venue, DayOfWeek, SearchResult } from '@/types'
 
-// Haggerston Overground station
 const HAGGERSTON = { lat: 51.5393, lng: -0.0762 }
 const DEFAULT_ZOOM = 15
+const NEARBY_MIN_ZOOM = 13
 
-function initLeafletIcons() {
+function initIcons() {
   // eslint-disable-next-line
   delete (L.Icon.Default.prototype as any)._getIconUrl
   L.Icon.Default.mergeOptions({
@@ -19,13 +19,37 @@ function initLeafletIcons() {
   })
 }
 
-function makeVenueIcon(type: string, hasDeals: boolean, highlight: boolean) {
-  const emoji = type === 'restaurant' ? '🍽️' : '🍺'
-  const size  = highlight ? 46 : hasDeals ? 40 : 32
-  const bg    = highlight ? '#f59e0b' : hasDeals ? '#d97706' : '#475569'
-  const glow  = highlight ? 'box-shadow:0 0 0 4px rgba(245,158,11,0.3),0 4px 16px rgba(0,0,0,0.5);' : hasDeals ? 'box-shadow:0 2px 8px rgba(0,0,0,0.4);' : 'box-shadow:0 1px 4px rgba(0,0,0,0.3);'
-  const fs    = Math.round(size * 0.45)
+// Three marker states
+type MarkerState = 'highlighted' | 'has-deals' | 'no-deals' | 'nearby'
 
+function pinIcon(state: MarkerState, type: string) {
+  const emoji = type === 'restaurant' ? '🍽️' : '🍺'
+  let bg: string, size: number, alpha: number, ring: string, glow: string
+
+  switch (state) {
+    case 'highlighted':
+      bg = '#f59e0b'; size = 42; alpha = 1
+      ring = '2.5px solid rgba(255,255,255,0.95)'
+      glow = '0 0 0 3px rgba(245,158,11,0.35), 0 3px 10px rgba(0,0,0,0.4)'
+      break
+    case 'has-deals':
+      bg = '#92400e'; size = 34; alpha = 0.85
+      ring = '2px solid rgba(255,255,255,0.7)'
+      glow = '0 2px 6px rgba(0,0,0,0.3)'
+      break
+    case 'no-deals':
+      bg = '#57534e'; size = 30; alpha = 0.75
+      ring = '1.5px solid rgba(255,255,255,0.5)'
+      glow = '0 1px 4px rgba(0,0,0,0.25)'
+      break
+    case 'nearby':
+    default:
+      bg = '#a8a29e'; size = 30; alpha = 0.6
+      ring = '1.5px solid rgba(255,255,255,0.5)'
+      glow = '0 1px 4px rgba(0,0,0,0.2)'
+  }
+
+  const fs = Math.round(size * 0.43)
   return L.divIcon({
     className: '',
     html: `<div style="
@@ -34,9 +58,10 @@ function makeVenueIcon(type: string, hasDeals: boolean, highlight: boolean) {
       border-radius:50% 50% 50% 0;
       transform:rotate(-45deg);
       display:flex;align-items:center;justify-content:center;
-      border:2px solid rgba(255,255,255,${hasDeals ? '0.9' : '0.5'});
-      ${glow}
-      transition:all .2s;
+      border:${ring};
+      box-shadow:${glow};
+      opacity:${alpha};
+      cursor:pointer;
     "><span style="transform:rotate(45deg);font-size:${fs}px;line-height:1;">${emoji}</span></div>`,
     iconSize:    [size, size],
     iconAnchor:  [size / 2, size],
@@ -44,21 +69,25 @@ function makeVenueIcon(type: string, hasDeals: boolean, highlight: boolean) {
   })
 }
 
-function makeFocusIcon(emoji: string) {
+function focusIcon(type: string) {
+  const emoji = type === 'restaurant' ? '🍽️' : '🍺'
   return L.divIcon({
     className: '',
     html: `<div class="ld-focus-pulse" style="
-      background:#3b82f6;
-      width:44px;height:44px;
+      background:#2563eb;width:46px;height:46px;
       border-radius:50%;
       display:flex;align-items:center;justify-content:center;
       border:3px solid white;
-      box-shadow:0 4px 16px rgba(59,130,246,0.5);
+      box-shadow:0 4px 18px rgba(37,99,235,0.55);
     "><span style="font-size:22px;">${emoji}</span></div>`,
-    iconSize:    [44, 44],
-    iconAnchor:  [22, 22],
-    popupAnchor: [0, -28],
+    iconSize: [46, 46],
+    iconAnchor: [23, 23],
+    popupAnchor: [0, -30],
   })
+}
+
+function tip(html: string) {
+  return { permanent: false as const, direction: 'top' as const, className: 'ld-tooltip', offset: [0, -6] as [number, number] }
 }
 
 interface Props {
@@ -66,125 +95,173 @@ interface Props {
   focusVenue: SearchResult | null
   selectedDay: DayOfWeek | 'all'
   onVenueClick: (venue: Venue) => void
+  onNearbyClick: (venue: SearchResult) => void
 }
 
-export default function MapComponent({ venues, focusVenue, selectedDay, onVenueClick }: Props) {
-  const mapDivRef   = useRef<HTMLDivElement>(null)
-  const mapRef      = useRef<L.Map | null>(null)
-  const venueLayer  = useRef<L.LayerGroup | null>(null)
-  const focusLayer  = useRef<L.LayerGroup | null>(null)
-  const clickRef    = useRef(onVenueClick)
+export default function MapComponent({ venues, focusVenue, selectedDay, onVenueClick, onNearbyClick }: Props) {
+  const divRef       = useRef<HTMLDivElement>(null)
+  const mapRef       = useRef<L.Map | null>(null)
+  const nearbyLayer  = useRef<L.LayerGroup | null>(null)
+  const venueLayer   = useRef<L.LayerGroup | null>(null)
+  const focusLayer   = useRef<L.LayerGroup | null>(null)
+  const onClickRef   = useRef(onVenueClick)
+  const onNearbyRef  = useRef(onNearbyClick)
+  const fetchingRef  = useRef(false)
+  const [nearbyVenues, setNearbyVenues] = useState<SearchResult[]>([])
 
-  useEffect(() => { clickRef.current = onVenueClick }, [onVenueClick])
+  useEffect(() => { onClickRef.current  = onVenueClick  }, [onVenueClick])
+  useEffect(() => { onNearbyRef.current = onNearbyClick }, [onNearbyClick])
+
+  const fetchNearby = useCallback(async (map: L.Map) => {
+    if (fetchingRef.current) return
+    if (map.getZoom() < NEARBY_MIN_ZOOM) { setNearbyVenues([]); return }
+
+    fetchingRef.current = true
+    const b = map.getBounds()
+    const bbox = [
+      b.getSouth().toFixed(4),
+      b.getWest().toFixed(4),
+      b.getNorth().toFixed(4),
+      b.getEast().toFixed(4),
+    ].join(',')
+
+    try {
+      const res = await fetch(`/api/nearby?bbox=${encodeURIComponent(bbox)}`)
+      if (res.ok) setNearbyVenues(await res.json())
+    } finally {
+      fetchingRef.current = false
+    }
+  }, [])
 
   // Initialise map once
   useEffect(() => {
-    if (mapRef.current || !mapDivRef.current) return
+    if (mapRef.current || !divRef.current) return
+    initIcons()
 
-    initLeafletIcons()
-
-    const map = L.map(mapDivRef.current, {
+    const map = L.map(divRef.current, {
       center: [HAGGERSTON.lat, HAGGERSTON.lng],
       zoom: DEFAULT_ZOOM,
       zoomControl: false,
     })
 
-    // CartoDB Dark Matter tiles — looks great on dark UI
+    // CartoDB Voyager — clean, warm, very readable
     L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       {
         attribution:
-          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
+          '© <a href="https://carto.com/attributions">CARTO</a>',
         subdomains: 'abcd',
         maxZoom: 19,
       }
     ).addTo(map)
 
-    // Zoom control bottom-right
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
-    venueLayer.current = L.layerGroup().addTo(map)
-    focusLayer.current = L.layerGroup().addTo(map)
+    // Layer order matters: nearby sits below venue markers, focus on top
+    nearbyLayer.current = L.layerGroup().addTo(map)
+    venueLayer.current  = L.layerGroup().addTo(map)
+    focusLayer.current  = L.layerGroup().addTo(map)
     mapRef.current = map
 
+    fetchNearby(map)
+
+    let moveTimer: ReturnType<typeof setTimeout>
+    const onMove = () => {
+      clearTimeout(moveTimer)
+      moveTimer = setTimeout(() => fetchNearby(map), 900)
+    }
+    map.on('moveend', onMove)
+
     return () => {
+      clearTimeout(moveTimer)
+      map.off('moveend', onMove)
       map.remove()
       mapRef.current = null
     }
-  }, [])
+  }, [fetchNearby])
 
-  // Update venue markers when venues or selectedDay changes
+  // Render DB venue markers
   useEffect(() => {
     if (!venueLayer.current) return
-
     venueLayer.current.clearLayers()
 
     venues.forEach((venue) => {
       const hasDeals = (venue.deals?.length ?? 0) > 0
-      const dealCount = venue.deals?.length ?? 0
+      const onSelectedDay =
+        selectedDay === 'all'
+          ? hasDeals
+          : (venue.deals?.some((d) => d.day_of_week === selectedDay) ?? false)
 
-      // When a day is filtered, highlight venues that have deals on that day
-      const dayMatch =
-        selectedDay === 'all' ||
-        (venue.deals?.some((d) => d.day_of_week === selectedDay) ?? false)
-      const highlight = dayMatch && hasDeals
+      const state: MarkerState = onSelectedDay
+        ? 'highlighted'
+        : hasDeals
+          ? 'has-deals'
+          : 'no-deals'
 
-      const icon = makeVenueIcon(venue.type, hasDeals, highlight)
+      const icon   = pinIcon(state, venue.type)
       const marker = L.marker([venue.lat, venue.lng], { icon })
 
-      const dayDeals =
+      const relevantDeals =
         selectedDay !== 'all'
-          ? venue.deals?.filter((d) => d.day_of_week === selectedDay) ?? []
-          : venue.deals ?? []
+          ? (venue.deals?.filter((d) => d.day_of_week === selectedDay) ?? [])
+          : (venue.deals ?? [])
 
-      const tooltipContent = `
-        <div>
-          <strong style="color:#f1f5f9">${venue.name}</strong>
-          ${highlight
-            ? `<br><span style="color:#f59e0b;font-size:11px">🎉 ${dayDeals.length} deal${dayDeals.length !== 1 ? 's' : ''}</span>`
-            : hasDeals
-              ? `<br><span style="color:#94a3b8;font-size:11px">${dealCount} total deal${dealCount !== 1 ? 's' : ''}</span>`
-              : ''
-          }
-        </div>
-      `
+      let tooltipHtml: string
+      if (onSelectedDay) {
+        tooltipHtml =
+          `<strong>${venue.name}</strong><br>` +
+          `<span style="color:#f59e0b">🎉 ${relevantDeals.length} deal${relevantDeals.length !== 1 ? 's' : ''}</span>`
+      } else if (hasDeals) {
+        tooltipHtml =
+          `<strong>${venue.name}</strong><br>` +
+          `<span style="color:#a8a29e">${venue.deals!.length} deal${venue.deals!.length !== 1 ? 's' : ''} — other days</span>`
+      } else {
+        tooltipHtml =
+          `<strong>${venue.name}</strong><br>` +
+          `<span style="color:#a8a29e">No deals yet — click to add one</span>`
+      }
 
-      marker.bindTooltip(tooltipContent, {
-        permanent: false,
-        direction: 'top',
-        className: 'ld-tooltip',
-        offset: [0, -8],
-      })
-
-      marker.on('click', () => clickRef.current(venue))
-
+      marker.bindTooltip(tooltipHtml, tip(tooltipHtml))
+      marker.on('click', () => onClickRef.current(venue))
       venueLayer.current?.addLayer(marker)
     })
   }, [venues, selectedDay])
 
-  // Focus on searched venue
+  // Render nearby (Overpass) markers — only for venues not already in DB
+  useEffect(() => {
+    if (!nearbyLayer.current) return
+    nearbyLayer.current.clearLayers()
+
+    const dbOsmIds = new Set(venues.map((v) => v.osm_id).filter(Boolean))
+
+    nearbyVenues
+      .filter((nv) => nv.osm_id && !dbOsmIds.has(nv.osm_id))
+      .forEach((nv) => {
+        const icon   = pinIcon('nearby', nv.type)
+        const marker = L.marker([nv.lat, nv.lng], { icon })
+        const html   = `<strong>${nv.name}</strong><br><span style="color:#a8a29e">Click to add a deal</span>`
+        marker.bindTooltip(html, tip(html))
+        marker.on('click', () => onNearbyRef.current(nv))
+        nearbyLayer.current?.addLayer(marker)
+      })
+  }, [nearbyVenues, venues])
+
+  // Pan/zoom to focused search result
   useEffect(() => {
     if (!focusLayer.current || !mapRef.current) return
-
     focusLayer.current.clearLayers()
-
     if (!focusVenue) return
 
-    mapRef.current.flyTo([focusVenue.lat, focusVenue.lng], 17, { animate: true, duration: 0.8 })
+    mapRef.current.flyTo([focusVenue.lat, focusVenue.lng], 17, { animate: true, duration: 0.75 })
 
-    const emoji = focusVenue.type === 'restaurant' ? '🍽️' : '🍺'
-    const icon  = makeFocusIcon(emoji)
-
-    L.marker([focusVenue.lat, focusVenue.lng], { icon })
-      .addTo(focusLayer.current!)
+    L.marker([focusVenue.lat, focusVenue.lng], { icon: focusIcon(focusVenue.type) })
+      .addTo(focusLayer.current)
       .bindTooltip(focusVenue.name, {
-        permanent: true,
-        direction: 'top',
-        className: 'ld-tooltip',
-        offset: [0, -8],
+        permanent: true, direction: 'top', className: 'ld-tooltip', offset: [0, -8],
       })
       .openTooltip()
   }, [focusVenue])
 
-  return <div ref={mapDivRef} className="w-full h-full" />
+  return <div ref={divRef} className="w-full h-full" />
 }

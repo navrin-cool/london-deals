@@ -16,14 +16,14 @@ export async function GET(request: NextRequest) {
 
   let venues = (data ?? []) as any[]
 
+  // Day filter: only used when a specific day is requested (for sidebar filtering)
   if (day && day !== 'all') {
     venues = venues.filter((v) =>
       v.deals?.some((d: any) => d.day_of_week === day)
     )
-  } else {
-    // On "all" view, only show venues that have at least one deal
-    venues = venues.filter((v) => (v.deals?.length ?? 0) > 0)
   }
+  // No day filter → return ALL DB venues so the map can show grey markers
+  // for venues that exist but have no deals yet
 
   return NextResponse.json(venues)
 }

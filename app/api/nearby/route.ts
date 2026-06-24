@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const LONDON_BBOX = '51.28,-0.51,51.69,0.33'
-
-// Overpass sometimes blocks cloud-provider IPs — try multiple mirrors in order
 const OVERPASS_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://lz4.overpass-api.de/api/interpreter',
@@ -19,15 +16,15 @@ async function queryOverpass(query: string): Promise<any> {
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 20000)
+    const timer = setTimeout(() => controller.abort(), 14000)
     try {
       const res = await fetch(endpoint, { method: 'POST', headers, body, signal: controller.signal })
       clearTimeout(timer)
       if (res.ok) return await res.json()
-      console.warn(`Overpass ${endpoint} returned ${res.status}`)
+      console.warn(`Nearby: ${endpoint} returned ${res.status}`)
     } catch (err: any) {
       clearTimeout(timer)
-      console.warn(`Overpass ${endpoint} failed: ${err.message}`)
+      console.warn(`Nearby: ${endpoint} failed: ${err.message}`)
     }
   }
   throw new Error('All Overpass endpoints failed')
@@ -35,18 +32,24 @@ async function queryOverpass(query: string): Promise<any> {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const q = searchParams.get('q')?.trim()
+  const bbox = searchParams.get('bbox')
 
-  if (!q || q.length < 2) return NextResponse.json([])
+  if (!bbox) return NextResponse.json([])
 
-  const safeQuery = q.replace(/[^\w\s\-'&]/g, '').trim()
-  if (!safeQuery) return NextResponse.json([])
+  const parts = bbox.split(',').map(Number)
+  if (parts.length !== 4 || parts.some(isNaN)) return NextResponse.json([])
+
+  const [south, west, north, east] = parts
+
+  if (south < 51.0 || north > 52.0 || west < -0.8 || east > 0.5) {
+    return NextResponse.json([])
+  }
 
   const overpassQuery =
-    `[out:json][timeout:20];` +
-    `(node["amenity"~"bar|pub|restaurant"]["name"~"${safeQuery}",i](${LONDON_BBOX});` +
-    `way["amenity"~"bar|pub|restaurant"]["name"~"${safeQuery}",i](${LONDON_BBOX}););` +
-    `out center 25;`
+    `[out:json][timeout:12];` +
+    `(node["amenity"~"bar|pub|restaurant"](${south},${west},${north},${east});` +
+    `way["amenity"~"bar|pub|restaurant"](${south},${west},${north},${east}););` +
+    `out center 150;`
 
   try {
     const data = await queryOverpass(overpassQuery)
@@ -64,16 +67,17 @@ export async function GET(request: NextRequest) {
           lng: lng as number,
           type: el.tags.amenity as string,
           address:
-            [el.tags['addr:housenumber'], el.tags['addr:street'], el.tags['addr:suburb']]
+            [el.tags['addr:housenumber'], el.tags['addr:street']]
               .filter(Boolean).join(' ') || 'London',
         }
       })
       .filter(Boolean)
-      .slice(0, 20)
 
-    return NextResponse.json(results)
+    return NextResponse.json(results, {
+      headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' },
+    })
   } catch (err) {
-    console.error('Search error:', err)
-    return NextResponse.json({ error: 'Search failed — try again shortly' }, { status: 500 })
+    console.error('Nearby error:', err)
+    return NextResponse.json([]) // fail silently — map still works without nearby layer
   }
 }

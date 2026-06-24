@@ -1,4 +1,5 @@
 -- Run this in your Supabase SQL Editor (supabase.com → project → SQL Editor)
+-- Safe to run multiple times — drops existing policies before recreating them
 
 CREATE TABLE IF NOT EXISTS venues (
   id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -24,13 +25,18 @@ CREATE TABLE IF NOT EXISTS deals (
 CREATE INDEX IF NOT EXISTS idx_deals_venue_id    ON deals(venue_id);
 CREATE INDEX IF NOT EXISTS idx_deals_day_of_week ON deals(day_of_week);
 
--- Row Level Security (open read, open write — add auth later if desired)
 ALTER TABLE venues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE deals  ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Public read venues"  ON venues FOR SELECT USING (true);
-CREATE POLICY "Public insert venues" ON venues FOR INSERT WITH CHECK (true);
+-- Drop policies first so re-running never errors
+DROP POLICY IF EXISTS "Public read venues"   ON venues;
+DROP POLICY IF EXISTS "Public insert venues" ON venues;
+DROP POLICY IF EXISTS "Public read deals"    ON deals;
+DROP POLICY IF EXISTS "Public insert deals"  ON deals;
+DROP POLICY IF EXISTS "Public delete deals"  ON deals;
 
-CREATE POLICY "Public read deals"   ON deals FOR SELECT USING (true);
-CREATE POLICY "Public insert deals" ON deals FOR INSERT WITH CHECK (true);
-CREATE POLICY "Public delete deals" ON deals FOR DELETE USING (true);
+CREATE POLICY "Public read venues"   ON venues FOR SELECT USING (true);
+CREATE POLICY "Public insert venues" ON venues FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public read deals"    ON deals  FOR SELECT USING (true);
+CREATE POLICY "Public insert deals"  ON deals  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public delete deals"  ON deals  FOR DELETE USING (true);
