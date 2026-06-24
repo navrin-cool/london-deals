@@ -96,21 +96,30 @@ interface Props {
   selectedDay: DayOfWeek | 'all'
   onVenueClick: (venue: Venue) => void
   onNearbyClick: (venue: SearchResult) => void
+  pinDropMode: boolean
+  onCenterChange: (lat: number, lng: number) => void
+  onPinDropped: (lat: number, lng: number) => void
 }
 
-export default function MapComponent({ venues, focusVenue, selectedDay, onVenueClick, onNearbyClick }: Props) {
+export default function MapComponent({ venues, focusVenue, selectedDay, onVenueClick, onNearbyClick, pinDropMode, onCenterChange, onPinDropped }: Props) {
   const divRef       = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<L.Map | null>(null)
   const nearbyLayer  = useRef<L.LayerGroup | null>(null)
   const venueLayer   = useRef<L.LayerGroup | null>(null)
   const focusLayer   = useRef<L.LayerGroup | null>(null)
-  const onClickRef   = useRef(onVenueClick)
-  const onNearbyRef  = useRef(onNearbyClick)
-  const fetchingRef  = useRef(false)
+  const onClickRef         = useRef(onVenueClick)
+  const onNearbyRef        = useRef(onNearbyClick)
+  const fetchingRef        = useRef(false)
+  const onCenterChangeRef  = useRef(onCenterChange)
+  const onPinDroppedRef    = useRef(onPinDropped)
+  const pinDropModeRef     = useRef(pinDropMode)
   const [nearbyVenues, setNearbyVenues] = useState<SearchResult[]>([])
 
-  useEffect(() => { onClickRef.current  = onVenueClick  }, [onVenueClick])
-  useEffect(() => { onNearbyRef.current = onNearbyClick }, [onNearbyClick])
+  useEffect(() => { onClickRef.current         = onVenueClick    }, [onVenueClick])
+  useEffect(() => { onNearbyRef.current        = onNearbyClick   }, [onNearbyClick])
+  useEffect(() => { onCenterChangeRef.current  = onCenterChange  }, [onCenterChange])
+  useEffect(() => { onPinDroppedRef.current    = onPinDropped    }, [onPinDropped])
+  useEffect(() => { pinDropModeRef.current     = pinDropMode     }, [pinDropMode])
 
   const fetchNearby = useCallback(async (map: L.Map) => {
     if (fetchingRef.current) return
@@ -170,6 +179,8 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
     const onMove = () => {
       clearTimeout(moveTimer)
       moveTimer = setTimeout(() => fetchNearby(map), 900)
+      const c = map.getCenter()
+      onCenterChangeRef.current(c.lat, c.lng)
     }
     map.on('moveend', onMove)
 
@@ -263,5 +274,36 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
       .openTooltip()
   }, [focusVenue])
 
-  return <div ref={divRef} className="w-full h-full" />
+  // Pin-drop click handler — attaches only when pinDropMode is true
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const handlePinClick = (e: L.LeafletMouseEvent) => {
+      if (!pinDropModeRef.current) return
+      onPinDroppedRef.current(e.latlng.lat, e.latlng.lng)
+    }
+
+    if (pinDropMode) {
+      map.on('click', handlePinClick)
+      return () => { map.off('click', handlePinClick) }
+    }
+  }, [pinDropMode])
+
+  return (
+    <div className="relative w-full h-full">
+      <div
+        ref={divRef}
+        className="w-full h-full"
+        style={{ cursor: pinDropMode ? 'crosshair' : '' }}
+      />
+      {pinDropMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-blue-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-3 pointer-events-auto">
+          <span className="text-sm font-medium whitespace-nowrap">
+            Click anywhere on the map to place the venue
+          </span>
+        </div>
+      )}
+    </div>
+  )
 }

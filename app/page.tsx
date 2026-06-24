@@ -154,6 +154,9 @@ export default function Home() {
           selectedDay={selectedDay}
           onVenueClick={handleOpenDeals}
           onNearbyClick={handleAddFromSearch}
+          pinDropMode={false}
+          onCenterChange={() => {}}
+          onPinDropped={() => {}}
         />
       </div>
 
