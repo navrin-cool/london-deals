@@ -96,10 +96,22 @@ export default function Home() {
     fetchVenues()
   }, [fetchVenues])
 
-  // Create venue in DB then open modal
+  // Open venue modal — GET by osm_id first (fast for imported venues), POST to create if new
   const handleAddFromSearch = useCallback(
     async (result: SearchResult) => {
       try {
+        // Fast path: venue already exists in DB (covers all 14K imported venues)
+        if (result.osm_id) {
+          const getRes = await fetch(`/api/venues?osm_id=${encodeURIComponent(result.osm_id)}`)
+          if (getRes.ok) {
+            const venue = await getRes.json()
+            if (venue) {
+              setModalVenue(venue)
+              return
+            }
+          }
+        }
+        // Slow path: create a new venue (pin-dropped venues without osm_id)
         const res = await fetch('/api/venues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

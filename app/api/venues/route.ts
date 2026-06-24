@@ -4,26 +4,38 @@ import { supabase } from '@/lib/supabase'
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const day = searchParams.get('day')
+  const osmId = searchParams.get('osm_id')
 
+  // Single-venue lookup by osm_id (used by sidebar click)
+  if (osmId) {
+    const { data, error } = await supabase
+      .from('venues')
+      .select('*, deals(*)')
+      .eq('osm_id', osmId)
+      .maybeSingle()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data) return NextResponse.json(null, { status: 404 })
+    return NextResponse.json(data)
+  }
+
+  // List: only return venues that have at least one deal (keeps payload small)
   const { data, error } = await supabase
     .from('venues')
     .select('*, deals(*)')
+    .not('deals', 'is', null)
     .order('name')
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  let venues = (data ?? []) as any[]
+  let venues = ((data ?? []) as any[]).filter((v) => v.deals?.length > 0)
 
-  // Day filter: only used when a specific day is requested (for sidebar filtering)
   if (day && day !== 'all') {
     venues = venues.filter((v) =>
       v.deals?.some((d: any) => d.day_of_week === day)
     )
   }
-  // No day filter → return ALL DB venues so the map can show grey markers
-  // for venues that exist but have no deals yet
 
   return NextResponse.json(venues)
 }
