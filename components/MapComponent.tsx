@@ -90,6 +90,14 @@ function tip(html: string) {
   return { permanent: false as const, direction: 'top' as const, className: 'ld-tooltip', offset: [0, -6] as [number, number] }
 }
 
+function escHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 interface Props {
   venues: Venue[]
   focusVenue: SearchResult | null
@@ -219,17 +227,18 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
           : (venue.deals ?? [])
 
       let tooltipHtml: string
+      const safeName = escHtml(venue.name)
       if (onSelectedDay) {
         tooltipHtml =
-          `<strong>${venue.name}</strong><br>` +
+          `<strong>${safeName}</strong><br>` +
           `<span style="color:#f59e0b">🎉 ${relevantDeals.length} deal${relevantDeals.length !== 1 ? 's' : ''}</span>`
       } else if (hasDeals) {
         tooltipHtml =
-          `<strong>${venue.name}</strong><br>` +
+          `<strong>${safeName}</strong><br>` +
           `<span style="color:#a8a29e">${venue.deals!.length} deal${venue.deals!.length !== 1 ? 's' : ''} — other days</span>`
       } else {
         tooltipHtml =
-          `<strong>${venue.name}</strong><br>` +
+          `<strong>${safeName}</strong><br>` +
           `<span style="color:#a8a29e">No deals yet — click to add one</span>`
       }
 
@@ -251,7 +260,7 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
       .forEach((nv) => {
         const icon   = pinIcon('nearby', nv.type)
         const marker = L.marker([nv.lat, nv.lng], { icon })
-        const html   = `<strong>${nv.name}</strong><br><span style="color:#a8a29e">Click to add a deal</span>`
+        const html   = `<strong>${escHtml(nv.name)}</strong><br><span style="color:#a8a29e">Click to add a deal</span>`
         marker.bindTooltip(html, tip(html))
         marker.on('click', () => onNearbyRef.current(nv))
         nearbyLayer.current?.addLayer(marker)
@@ -268,7 +277,7 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
 
     L.marker([focusVenue.lat, focusVenue.lng], { icon: focusIcon(focusVenue.type) })
       .addTo(focusLayer.current)
-      .bindTooltip(focusVenue.name, {
+      .bindTooltip(escHtml(focusVenue.name), {
         permanent: true, direction: 'top', className: 'ld-tooltip', offset: [0, -8],
       })
       .openTooltip()
@@ -277,17 +286,14 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
   // Pin-drop click handler — attaches only when pinDropMode is true
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
+    if (!map || !pinDropMode) return  // early return when false — no cleanup needed
 
     const handlePinClick = (e: L.LeafletMouseEvent) => {
-      if (!pinDropModeRef.current) return
       onPinDroppedRef.current(e.latlng.lat, e.latlng.lng)
     }
 
-    if (pinDropMode) {
-      map.on('click', handlePinClick)
-      return () => { map.off('click', handlePinClick) }
-    }
+    map.on('click', handlePinClick)
+    return () => { map.off('click', handlePinClick) }
   }, [pinDropMode])
 
   return (

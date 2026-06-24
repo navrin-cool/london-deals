@@ -30,12 +30,20 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
+  const { name, lat, lng, type, address, osm_id } = body
 
-  if (body.osm_id) {
+  if (!name?.trim()) {
+    return NextResponse.json({ error: 'name is required' }, { status: 400 })
+  }
+  if (typeof lat !== 'number' || isNaN(lat) || typeof lng !== 'number' || isNaN(lng)) {
+    return NextResponse.json({ error: 'lat and lng must be numbers' }, { status: 400 })
+  }
+
+  if (osm_id) {
     const { data: existing } = await supabase
       .from('venues')
       .select('*, deals(*)')
-      .eq('osm_id', body.osm_id)
+      .eq('osm_id', osm_id)
       .maybeSingle()
 
     if (existing) return NextResponse.json(existing)
@@ -44,12 +52,12 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from('venues')
     .insert({
-      name: body.name,
-      address: body.address || 'London',
-      lat: body.lat,
-      lng: body.lng,
-      type: body.type || 'bar',
-      osm_id: body.osm_id ?? null,
+      name: name.trim(),
+      address: address || 'London',
+      lat,
+      lng,
+      type: type || 'bar',
+      osm_id: osm_id ?? null,
     })
     .select('*, deals(*)')
     .single()
