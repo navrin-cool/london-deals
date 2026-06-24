@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import SearchPanel from '@/components/SearchPanel'
 import FilterBar from '@/components/FilterBar'
 import DealModal from '@/components/DealModal'
+import AddVenueModal from '@/components/AddVenueModal'
 import { Venue, DayOfWeek, SearchResult } from '@/types'
 
 const MapComponent = dynamic(() => import('@/components/MapComponent'), {
@@ -25,6 +26,11 @@ export default function Home() {
   const [modalVenue, setModalVenue] = useState<Venue | null>(null)
   const [focusVenue, setFocusVenue] = useState<SearchResult | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+
+  const HAGGERSTON = { lat: 51.5393, lng: -0.0762 }
+  const [mapCenter, setMapCenter]   = useState(HAGGERSTON)
+  const [pinDropMode, setPinDropMode] = useState(false)
+  const [droppedPin, setDroppedPin]  = useState<{ lat: number; lng: number } | null>(null)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -67,6 +73,27 @@ export default function Home() {
   const handleOpenDeals = useCallback((venue: Venue) => {
     setModalVenue(venue)
   }, [])
+
+  const handleStartPinDrop = useCallback(() => {
+    setPinDropMode(true)
+    setSidebarOpen(false)
+  }, [])
+
+  const handlePinDropped = useCallback((lat: number, lng: number) => {
+    setPinDropMode(false)
+    setDroppedPin({ lat, lng })
+  }, [])
+
+  const handleCancelAddVenue = useCallback(() => {
+    setDroppedPin(null)
+    setSidebarOpen(true)
+  }, [])
+
+  const handleVenueAdded = useCallback((venue: Venue) => {
+    setDroppedPin(null)
+    setModalVenue(venue)
+    fetchVenues()
+  }, [fetchVenues])
 
   // Create venue in DB then open modal
   const handleAddFromSearch = useCallback(
@@ -136,6 +163,8 @@ export default function Home() {
           onVenueSelect={setFocusVenue}
           onOpenDeals={handleOpenDeals}
           onAddFromSearch={handleAddFromSearch}
+          mapCenter={mapCenter}
+          onStartPinDrop={handleStartPinDrop}
         />
       </div>
 
@@ -154,9 +183,9 @@ export default function Home() {
           selectedDay={selectedDay}
           onVenueClick={handleOpenDeals}
           onNearbyClick={handleAddFromSearch}
-          pinDropMode={false}
-          onCenterChange={() => {}}
-          onPinDropped={() => {}}
+          pinDropMode={pinDropMode}
+          onCenterChange={(lat, lng) => setMapCenter({ lat, lng })}
+          onPinDropped={handlePinDropped}
         />
       </div>
 
@@ -166,6 +195,15 @@ export default function Home() {
           venue={modalVenue}
           onClose={() => setModalVenue(null)}
           onUpdate={handleDealUpdate}
+        />
+      )}
+
+      {droppedPin && (
+        <AddVenueModal
+          lat={droppedPin.lat}
+          lng={droppedPin.lng}
+          onClose={handleCancelAddVenue}
+          onAdded={handleVenueAdded}
         />
       )}
 
