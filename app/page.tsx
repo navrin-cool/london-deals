@@ -32,6 +32,7 @@ export default function Home() {
   const [pinDropMode, setPinDropMode] = useState(false)
   const [droppedPin, setDroppedPin]  = useState<{ lat: number; lng: number } | null>(null)
   const [nearbyVenues, setNearbyVenues] = useState<SearchResult[]>([])
+  const [wtvCounts, setWtvCounts] = useState<Record<string, number>>({})
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -62,6 +63,16 @@ export default function Home() {
     const interval = setInterval(fetchVenues, 30_000)
     return () => clearInterval(interval)
   }, [fetchVenues])
+
+  useEffect(() => {
+    if (nearbyVenues.length === 0) { setWtvCounts({}); return }
+    const ids = nearbyVenues.map((v) => v.id).filter(Boolean)
+    if (ids.length === 0) return
+    fetch(`/api/want-to-visit/counts?venue_ids=${ids.join(',')}`)
+      .then((r) => r.json())
+      .then((data) => setWtvCounts(data ?? {}))
+      .catch(() => {})
+  }, [nearbyVenues])
 
   const handleDealUpdate = useCallback(async () => {
     fetchVenues()
@@ -173,6 +184,7 @@ export default function Home() {
           selectedDay={selectedDay}
           venues={venues}
           nearbyVenues={nearbyVenues}
+          wtvCounts={wtvCounts}
           loading={loadingVenues}
           onVenueSelect={setFocusVenue}
           onOpenDeals={handleOpenDeals}

@@ -57,6 +57,13 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [dealError, setDealError] = useState('')
 
+  // — Want to visit state —
+  const [wtvCount, setWtvCount] = useState(0)
+  const [isOnMyList, setIsOnMyList] = useState(false)
+  const [visitorName, setVisitorName] = useState('')
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [nameInput, setNameInput] = useState('')
+
   // — Comment state —
   const [comments, setComments] = useState<Comment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
@@ -74,15 +81,27 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
   // Sync deals when venue prop updates
   useEffect(() => { setDeals(venue.deals ?? []) }, [venue])
 
-  // Load author name + liked comment IDs from localStorage
+  // Load persisted names + liked IDs from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('ld_author_name')
-    if (saved) setAuthorName(saved)
+    const author = localStorage.getItem('ld_author_name')
+    if (author) setAuthorName(author)
+    const visitor = localStorage.getItem('ld_visitor_name')
+    if (visitor) setVisitorName(visitor)
     try {
       const liked = localStorage.getItem('ld_liked_comments')
       if (liked) setLikedIds(new Set(JSON.parse(liked)))
     } catch {}
   }, [])
+
+  // Fetch want-to-visit count + status
+  useEffect(() => {
+    const stored = localStorage.getItem('ld_visitor_name') ?? ''
+    const qs = stored ? `?venue_id=${venue.id}&visitor_name=${encodeURIComponent(stored)}` : `?venue_id=${venue.id}`
+    fetch(`/api/want-to-visit${qs}`)
+      .then((r) => r.json())
+      .then((d) => { setWtvCount(d.count ?? 0); setIsOnMyList(d.on_list ?? false) })
+      .catch(() => {})
+  }, [venue.id])
 
   // Fetch comments when modal opens
   const fetchComments = useCallback(async () => {
@@ -107,6 +126,35 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
+
+  // — Want to visit handlers —
+  const handleToggleWtv = () => {
+    if (!visitorName) { setShowNamePrompt(true); return }
+    const next = !isOnMyList
+    setIsOnMyList(next)
+    setWtvCount((c) => c + (next ? 1 : -1))
+    fetch('/api/want-to-visit', {
+      method: next ? 'POST' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ venue_id: venue.id, visitor_name: visitorName }),
+    })
+  }
+
+  const handleSaveName = () => {
+    const name = nameInput.trim()
+    if (!name) return
+    setVisitorName(name)
+    localStorage.setItem('ld_visitor_name', name)
+    setNameInput('')
+    setShowNamePrompt(false)
+    setIsOnMyList(true)
+    setWtvCount((c) => c + 1)
+    fetch('/api/want-to-visit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ venue_id: venue.id, visitor_name: name }),
+    })
+  }
 
   // — Deal handlers —
   const toggleDay = (day: DayOfWeek) => {
@@ -248,6 +296,53 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+
+        {/* Want to visit */}
+        <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-3">
+          {showNamePrompt ? (
+            <div className="flex items-center gap-2 flex-1">
+              <input
+                type="text"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveName() }}
+                placeholder="Your name"
+                autoFocus
+                className="flex-1 bg-slate-800 border border-slate-700 focus:border-amber-500/50 text-white placeholder-slate-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-colors"
+              />
+              <button
+                onClick={handleSaveName}
+                disabled={!nameInput.trim()}
+                className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setShowNamePrompt(false)}
+                className="text-slate-500 hover:text-slate-300 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={handleToggleWtv}
+                className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${
+                  isOnMyList ? 'text-amber-400 hover:text-amber-300' : 'text-slate-400 hover:text-amber-400'
+                }`}
+              >
+                <span className="text-base">{isOnMyList ? '★' : '☆'}</span>
+                {isOnMyList ? 'On my list' : 'Want to visit'}
+              </button>
+              {wtvCount > 0 && (
+                <span className="text-xs text-slate-500">
+                  {wtvCount} {wtvCount === 1 ? 'person wants' : 'people want'} to visit
+                </span>
+              )}
+            </>
+          )}
         </div>
 
         {/* Scrollable body — deals + comments */}

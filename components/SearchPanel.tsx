@@ -35,6 +35,7 @@ interface Props {
   selectedDay: DayOfWeek | 'all'
   venues: Venue[]
   nearbyVenues: SearchResult[]
+  wtvCounts: Record<string, number>
   loading: boolean
   onVenueSelect: (venue: SearchResult | null) => void
   onOpenDeals: (venue: Venue) => void
@@ -47,6 +48,7 @@ export default function SearchPanel({
   selectedDay,
   venues,
   nearbyVenues,
+  wtvCounts,
   loading,
   onVenueSelect,
   onOpenDeals,
@@ -58,8 +60,29 @@ export default function SearchPanel({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const [activeTab, setActiveTab] = useState<'nearby' | 'mylist'>('nearby')
+  const [myList, setMyList] = useState<Venue[]>([])
+  const [myListLoading, setMyListLoading] = useState(false)
+  const [visitorName, setVisitorName] = useState('')
   const debounceRef = useRef<NodeJS.Timeout>()
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const name = localStorage.getItem('ld_visitor_name') ?? ''
+    setVisitorName(name)
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'mylist') return
+    const name = localStorage.getItem('ld_visitor_name') ?? ''
+    if (!name) return
+    setMyListLoading(true)
+    fetch(`/api/want-to-visit?visitor_name=${encodeURIComponent(name)}`)
+      .then((r) => r.json())
+      .then((data) => setMyList(Array.isArray(data) ? data : []))
+      .catch(() => setMyList([]))
+      .finally(() => setMyListLoading(false))
+  }, [activeTab])
 
   // Build a set of known osm_ids for quick lookup
   const knownOsmIds = new Set(venues.map((v) => v.osm_id).filter(Boolean))
@@ -164,9 +187,85 @@ export default function SearchPanel({
         </button>
       </div>
 
+      {/* Tabs: Nearby / My List */}
+      <div className="flex border-b border-slate-800 flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('nearby')}
+          className={`flex-1 py-2 text-xs font-medium transition-colors ${
+            activeTab === 'nearby'
+              ? 'text-amber-400 border-b-2 border-amber-400'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Nearby
+        </button>
+        <button
+          onClick={() => setActiveTab('mylist')}
+          className={`flex-1 py-2 text-xs font-medium transition-colors ${
+            activeTab === 'mylist'
+              ? 'text-amber-400 border-b-2 border-amber-400'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          ★ My List
+        </button>
+      </div>
+
       {/* List */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
-        {isSearchMode ? (
+        {activeTab === 'mylist' ? (
+          <>
+            {!visitorName && (
+              <div className="px-4 py-10 text-center">
+                <div className="text-4xl mb-3">★</div>
+                <p className="text-slate-400 text-sm font-medium">Your list is empty</p>
+                <p className="text-slate-600 text-xs mt-1">Click &ldquo;Want to visit&rdquo; on a venue to start your list.</p>
+              </div>
+            )}
+            {visitorName && myListLoading && (
+              <div className="px-4 py-6 text-center">
+                <p className="text-slate-500 text-sm animate-pulse">Loading your list…</p>
+              </div>
+            )}
+            {visitorName && !myListLoading && myList.length === 0 && (
+              <div className="px-4 py-10 text-center">
+                <div className="text-4xl mb-3">★</div>
+                <p className="text-slate-400 text-sm font-medium">No venues saved yet</p>
+                <p className="text-slate-600 text-xs mt-1">Click &ldquo;Want to visit&rdquo; on any venue to add it here.</p>
+              </div>
+            )}
+            {visitorName && !myListLoading && myList.length > 0 && (
+              <>
+                <div className="px-3 py-2 text-xs text-slate-500 font-medium uppercase tracking-widest">
+                  {myList.length} saved venue{myList.length !== 1 ? 's' : ''}
+                </div>
+                {myList.map((venue) => (
+                  <button
+                    key={venue.id}
+                    onClick={() => onOpenDeals(venue)}
+                    className="w-full text-left p-3 border-b border-slate-800/60 hover:bg-slate-800/60 transition-colors group"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="text-base mt-0.5 flex-shrink-0">{venueEmoji(venue.type)}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-100 truncate group-hover:text-white">
+                          {venue.name}
+                          {wtvCounts[venue.id] != null && wtvCounts[venue.id] > 0 && (
+                            <span className="ml-1.5 text-amber-400 text-xs">★{wtvCounts[venue.id]}</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">{venue.address}</p>
+                        {venue.deals && venue.deals.length > 0 && (
+                          <p className="text-xs text-slate-600 mt-0.5">{venue.deals.length} deal{venue.deals.length !== 1 ? 's' : ''}</p>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+          </>
+        ) : isSearchMode ? (
           <>
             {/* Search results */}
             <div className="px-3 py-2 text-xs text-slate-500 font-medium uppercase tracking-widest flex items-center gap-2">
@@ -301,6 +400,9 @@ export default function SearchPanel({
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-100 truncate group-hover:text-white">
                               {item.name}
+                              {wtvCounts[item.id] > 0 && (
+                                <span className="ml-1.5 text-amber-400 text-xs">★{wtvCounts[item.id]}</span>
+                              )}
                             </p>
                             {relevantDeals.length > 0 ? (
                               <div className="mt-0.5">

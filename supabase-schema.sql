@@ -76,6 +76,29 @@ RETURNS void AS $$
   UPDATE comments SET likes = likes + 1 WHERE id = comment_id;
 $$ LANGUAGE sql;
 
+-- ─── Want to visit ───────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS want_to_visit (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  venue_id     UUID        NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+  visitor_name TEXT        NOT NULL,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (venue_id, visitor_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wtv_venue_id     ON want_to_visit(venue_id);
+CREATE INDEX IF NOT EXISTS idx_wtv_visitor_name ON want_to_visit(visitor_name);
+
+ALTER TABLE want_to_visit ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read wtv"   ON want_to_visit;
+DROP POLICY IF EXISTS "Public insert wtv" ON want_to_visit;
+DROP POLICY IF EXISTS "Public delete wtv" ON want_to_visit;
+
+CREATE POLICY "Public read wtv"   ON want_to_visit FOR SELECT USING (true);
+CREATE POLICY "Public insert wtv" ON want_to_visit FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public delete wtv" ON want_to_visit FOR DELETE USING (true);
+
 -- ─── Deal time windows ────────────────────────────────────────────────────────
 -- Run this once to add optional start/end times to existing deals tables.
 

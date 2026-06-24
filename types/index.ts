@@ -30,6 +30,7 @@ export interface Venue {
 }
 
 export interface SearchResult {
+  id: string
   osm_id: string
   name: string
   lat: number
