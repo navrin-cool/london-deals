@@ -1,79 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const LONDON_BBOX = '51.28,-0.51,51.69,0.33'
-
-// Overpass sometimes blocks cloud-provider IPs — try multiple mirrors in order
-const OVERPASS_ENDPOINTS = [
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-]
-
-async function queryOverpass(query: string): Promise<any> {
-  const body = `data=${encodeURIComponent(query)}`
-  const headers = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'User-Agent': 'LondonDeals/1.0 (https://london-deals-ten.vercel.app)',
-    'Accept': 'application/json',
-  }
-
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 20000)
-    try {
-      const res = await fetch(endpoint, { method: 'POST', headers, body, signal: controller.signal })
-      clearTimeout(timer)
-      if (res.ok) return await res.json()
-      console.warn(`Overpass ${endpoint} returned ${res.status}`)
-    } catch (err: any) {
-      clearTimeout(timer)
-      console.warn(`Overpass ${endpoint} failed: ${err.message}`)
-    }
-  }
-  throw new Error('All Overpass endpoints failed')
-}
+import { supabase } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get('q')?.trim()
+  const lat = parseFloat(searchParams.get('lat') ?? '')
+  const lng = parseFloat(searchParams.get('lng') ?? '')
 
   if (!q || q.length < 2) return NextResponse.json([])
 
-  const safeQuery = q.replace(/[^\w\s\-'&]/g, '').trim()
-  if (!safeQuery) return NextResponse.json([])
+  const { data, error } = await supabase
+    .from('venues')
+    .select('id, osm_id, name, lat, lng, type, address')
+    .ilike('name', `%${q}%`)
+    .limit(50)
 
-  const overpassQuery =
-    `[out:json][timeout:20];` +
-    `(node["amenity"~"bar|pub|restaurant"]["name"~"${safeQuery}",i](${LONDON_BBOX});` +
-    `way["amenity"~"bar|pub|restaurant"]["name"~"${safeQuery}",i](${LONDON_BBOX}););` +
-    `out center 25;`
-
-  try {
-    const data = await queryOverpass(overpassQuery)
-
-    const results = (data.elements as any[])
-      .filter((el) => el.tags?.name)
-      .map((el) => {
-        const lat = el.type === 'way' ? el.center?.lat : el.lat
-        const lng = el.type === 'way' ? el.center?.lon : el.lon
-        if (!lat || !lng) return null
-        return {
-          osm_id: `${el.type}/${el.id}`,
-          name: el.tags.name as string,
-          lat: lat as number,
-          lng: lng as number,
-          type: el.tags.amenity as string,
-          address:
-            [el.tags['addr:housenumber'], el.tags['addr:street'], el.tags['addr:suburb']]
-              .filter(Boolean).join(' ') || 'London',
-        }
-      })
-      .filter(Boolean)
-      .slice(0, 20)
-
-    return NextResponse.json(results)
-  } catch (err) {
-    console.error('Search error:', err)
-    return NextResponse.json({ error: 'Search failed — try again shortly' }, { status: 500 })
+  if (error) {
+    console.error('Search error:', error)
+    return NextResponse.json({ error: 'Search failed — try again' }, { status: 500 })
   }
+
+  let results = (data ?? []) as any[]
+
+  if (!isNaN(lat) && !isNaN(lng)) {
+    results = results.sort((a, b) => {
+      const dA = (a.lat - lat) ** 2 + (a.lng - lng) ** 2
+      const dB = (b.lat - lat) ** 2 + (b.lng - lng) ** 2
+      return dA - dB
+    })
+  }
+
+  return NextResponse.json(results.slice(0, 20))
 }
