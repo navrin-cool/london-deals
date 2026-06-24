@@ -17,6 +17,20 @@ function venueEmoji(type: string) {
   return type === 'restaurant' ? '🍽️' : '🍺'
 }
 
+function fmt12(t: string): string {
+  const [h, m] = t.split(':').map(Number)
+  const period = h >= 12 ? 'pm' : 'am'
+  const hour = h % 12 || 12
+  return m === 0 ? `${hour}${period}` : `${hour}:${String(m).padStart(2, '0')}${period}`
+}
+
+function dealTime(start?: string | null, end?: string | null): string {
+  if (start && end) return `${fmt12(start)}–${fmt12(end)}`
+  if (start) return `from ${fmt12(start)}`
+  if (end) return `until ${fmt12(end)}`
+  return ''
+}
+
 interface Props {
   selectedDay: DayOfWeek | 'all'
   venues: Venue[]
@@ -288,7 +302,21 @@ export default function SearchPanel({
                             <p className="text-sm font-medium text-slate-100 truncate group-hover:text-white">
                               {item.name}
                             </p>
-                            <p className="text-xs text-slate-500 truncate">{item.address}</p>
+                            {relevantDeals.length > 0 ? (
+                              <div className="mt-0.5">
+                                <p className="text-xs text-slate-300 truncate">
+                                  {relevantDeals[0].description}
+                                  {dealTime(relevantDeals[0].start_time, relevantDeals[0].end_time) && (
+                                    <span className="text-slate-500"> · {dealTime(relevantDeals[0].start_time, relevantDeals[0].end_time)}</span>
+                                  )}
+                                </p>
+                                {relevantDeals.length > 1 && (
+                                  <p className="text-xs text-slate-600">+{relevantDeals.length - 1} more deal{relevantDeals.length > 2 ? 's' : ''}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-500 truncate">{item.address}</p>
+                            )}
                             {days.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1.5">
                                 {days.map((d) => (
