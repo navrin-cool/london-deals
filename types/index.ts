@@ -35,3 +35,12 @@ export interface SearchResult {
   type: string
   address: string
 }
+
+export interface Comment {
+  id: string
+  venue_id: string
+  author_name: string
+  body: string
+  likes: number
+  created_at: string
+}
