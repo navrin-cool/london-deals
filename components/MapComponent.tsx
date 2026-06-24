@@ -259,15 +259,16 @@ export default function MapComponent({ venues, focusVenue, selectedDay, onVenueC
     })
   }, [venues, selectedDay])
 
-  // Render nearby (Overpass) markers — only for venues not already in DB
+  // Render nearby markers — skip any venue already shown in the venue layer
   useEffect(() => {
     if (!nearbyLayer.current) return
     nearbyLayer.current.clearLayers()
 
     const dbOsmIds = new Set(venues.map((v) => v.osm_id).filter(Boolean))
+    const dbIds    = new Set(venues.map((v) => v.id))
 
     nearbyVenues
-      .filter((nv) => nv.osm_id && !dbOsmIds.has(nv.osm_id))
+      .filter((nv) => !dbIds.has(nv.id) && !(nv.osm_id && dbOsmIds.has(nv.osm_id)))
       .forEach((nv) => {
         const icon   = pinIcon('nearby', nv.type)
         const marker = L.marker([nv.lat, nv.lng], { icon })

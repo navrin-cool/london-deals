@@ -111,15 +111,20 @@ export default function Home() {
   const handleAddFromSearch = useCallback(
     async (result: SearchResult) => {
       try {
-        // Fast path: venue already exists in DB (covers all 14K imported venues)
+        // Fast path by osm_id (imported venues — covers the bulk 14K set)
         if (result.osm_id) {
           const getRes = await fetch(`/api/venues?osm_id=${encodeURIComponent(result.osm_id)}`)
           if (getRes.ok) {
             const venue = await getRes.json()
-            if (venue) {
-              setModalVenue(venue)
-              return
-            }
+            if (venue) { setModalVenue(venue); return }
+          }
+        }
+        // Fast path by UUID id (user-created venues without osm_id)
+        if (result.id) {
+          const getRes = await fetch(`/api/venues/${encodeURIComponent(result.id)}`)
+          if (getRes.ok) {
+            const venue = await getRes.json()
+            if (venue && !venue.error) { setModalVenue(venue); return }
           }
         }
         // Slow path: create a new venue (pin-dropped venues without osm_id)

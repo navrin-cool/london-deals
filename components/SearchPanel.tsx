@@ -102,9 +102,12 @@ export default function SearchPanel({
     }).finally(() => setMyListLoading(false))
   }, [activeTab, selectedNames])
 
-  // Build a set of known osm_ids for quick lookup
-  const knownOsmIds = new Set(venues.map((v) => v.osm_id).filter(Boolean))
-  const venueByOsmId = new Map(venues.map((v) => [v.osm_id, v]))
+  // Separate lookups: by osm_id (imported venues) and by UUID id (user-created, no osm_id)
+  // Must NOT merge both into one map keyed by osm_id — null keys collide
+  const venueByOsmId = new Map(venues.filter((v) => v.osm_id).map((v) => [v.osm_id!, v]))
+  const venueById    = new Map(venues.map((v) => [v.id, v]))
+  const knownOsmIds  = new Set(venues.filter((v) => v.osm_id).map((v) => v.osm_id!))
+  const knownIds     = new Set(venues.map((v) => v.id))
 
   const search = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -147,9 +150,12 @@ export default function SearchPanel({
     inputRef.current?.focus()
   }
 
+  const lookupVenue = (result: SearchResult) =>
+    (result.osm_id ? venueByOsmId.get(result.osm_id) : null) ?? venueById.get(result.id)
+
   const openVenue = (result: SearchResult) => {
     onVenueSelect(result)
-    const existing = venueByOsmId.get(result.osm_id)
+    const existing = lookupVenue(result)
     if (existing) {
       onOpenDeals(existing)
     } else {
@@ -346,10 +352,10 @@ export default function SearchPanel({
             )}
 
             {searchResults.map((result) => {
-              const alreadySaved = knownOsmIds.has(result.osm_id)
+              const alreadySaved = (result.osm_id ? knownOsmIds.has(result.osm_id) : false) || knownIds.has(result.id)
               return (
                 <button
-                  key={result.osm_id}
+                  key={result.id || result.osm_id}
                   onClick={() => handleResultClick(result)}
                   className="w-full text-left p-3 border-b border-slate-800/60 hover:bg-slate-800/60 transition-colors group"
                 >
@@ -388,7 +394,7 @@ export default function SearchPanel({
               // Merge nearby venues with saved deal data, sort by distance
               const sidebarItems = nearbyVenues
                 .map((nv) => {
-                  const saved = venueByOsmId.get(nv.osm_id) ?? null
+                  const saved = (nv.osm_id ? venueByOsmId.get(nv.osm_id) : null) ?? venueById.get(nv.id) ?? null
                   return { ...nv, deals: saved?.deals ?? [], savedVenue: saved }
                 })
                 .sort((a, b) => {
@@ -438,7 +444,7 @@ export default function SearchPanel({
 
                     return (
                       <button
-                        key={item.osm_id}
+                        key={item.id}
                         onClick={() => {
                           if (item.savedVenue) onOpenDeals(item.savedVenue)
                           else onAddFromSearch(item)
