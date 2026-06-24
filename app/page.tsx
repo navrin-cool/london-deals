@@ -182,8 +182,8 @@ export default function Home() {
         />
       </div>
 
-      {/* Map area */}
-      <div className="flex-1 relative">
+      {/* Map area — isolate contains Leaflet's internal z-indices (200-700) */}
+      <div className="flex-1 relative isolate">
         <button
           onClick={() => setSidebarOpen((o) => !o)}
           className="absolute top-4 left-4 z-20 bg-white/90 hover:bg-white border border-stone-200 text-stone-700 hover:text-stone-900 rounded-lg px-3 py-2 text-sm font-medium shadow-md transition-all backdrop-blur-sm"
