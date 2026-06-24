@@ -24,6 +24,8 @@ interface Props {
   onVenueSelect: (venue: SearchResult | null) => void
   onOpenDeals: (venue: Venue) => void
   onAddFromSearch: (result: SearchResult) => void
+  mapCenter: { lat: number; lng: number }
+  onStartPinDrop: () => void
 }
 
 export default function SearchPanel({
@@ -33,6 +35,8 @@ export default function SearchPanel({
   onVenueSelect,
   onOpenDeals,
   onAddFromSearch,
+  mapCenter,
+  onStartPinDrop,
 }: Props) {
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -53,7 +57,9 @@ export default function SearchPanel({
     setSearching(true)
     setSearchError('')
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+      const res = await fetch(
+        `/api/search?q=${encodeURIComponent(q)}&lat=${mapCenter.lat}&lng=${mapCenter.lng}`
+      )
       if (!res.ok) throw new Error('Search failed')
       const data = await res.json()
       if (data.error) throw new Error(data.error)
@@ -127,6 +133,16 @@ export default function SearchPanel({
         </div>
       </div>
 
+      {/* Add Venue button */}
+      <div className="px-3 py-2 border-b border-slate-800 flex-shrink-0">
+        <button
+          onClick={onStartPinDrop}
+          className="w-full text-xs font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/30 rounded-lg py-2 transition-colors"
+        >
+          + Add Venue
+        </button>
+      </div>
+
       {/* List */}
       <div className="flex-1 overflow-y-auto overscroll-contain">
         {isSearchMode ? (
@@ -149,7 +165,13 @@ export default function SearchPanel({
 
             {!searching && searchResults.length === 0 && !searchError && (
               <div className="px-4 py-8 text-center text-slate-500 text-sm">
-                No venues found for &ldquo;{query}&rdquo;
+                <p>No venues found for &ldquo;{query}&rdquo;</p>
+                <button
+                  onClick={onStartPinDrop}
+                  className="mt-3 text-amber-400 hover:text-amber-300 text-xs underline underline-offset-2"
+                >
+                  Not listed? Drop a pin on the map →
+                </button>
               </div>
             )}
 
