@@ -3,20 +3,29 @@ import { supabase } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
+  const { venue_id, days, description, start_time, end_time } = body
 
-  if (!body.venue_id || !body.day_of_week || !body.description?.trim()) {
+  if (!venue_id || !Array.isArray(days) || days.length === 0 || !description?.trim()) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
+  const valid = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+  if (days.some((d: string) => !valid.includes(d))) {
+    return NextResponse.json({ error: 'Invalid day_of_week value' }, { status: 400 })
+  }
+
+  const rows = days.map((day: string) => ({
+    venue_id,
+    day_of_week: day,
+    description: description.trim(),
+    start_time: start_time || null,
+    end_time:   end_time   || null,
+  }))
+
   const { data, error } = await supabase
     .from('deals')
-    .insert({
-      venue_id: body.venue_id,
-      day_of_week: body.day_of_week,
-      description: body.description.trim(),
-    })
+    .insert(rows)
     .select()
-    .single()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

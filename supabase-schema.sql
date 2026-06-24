@@ -75,3 +75,9 @@ CREATE OR REPLACE FUNCTION increment_comment_likes(comment_id uuid)
 RETURNS void AS $$
   UPDATE comments SET likes = likes + 1 WHERE id = comment_id;
 $$ LANGUAGE sql;
+
+-- ─── Deal time windows ────────────────────────────────────────────────────────
+-- Run this once to add optional start/end times to existing deals tables.
+
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS start_time TIME;
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS end_time   TIME;

@@ -12,6 +12,8 @@ export interface Deal {
   venue_id: string
   day_of_week: DayOfWeek
   description: string
+  start_time?: string | null
+  end_time?: string | null
   created_at?: string
 }
 

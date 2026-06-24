@@ -15,6 +15,20 @@ const DAYS: DayConfig[] = [
   { key: 'sunday',    label: 'Sunday',    activeClass: 'bg-yellow-500 text-slate-900', chipClass: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
 ]
 
+function fmt12(t: string): string {
+  const [h, m] = t.split(':').map(Number)
+  const period = h >= 12 ? 'pm' : 'am'
+  const hour = h % 12 || 12
+  return m === 0 ? `${hour}${period}` : `${hour}:${String(m).padStart(2, '0')}${period}`
+}
+
+function timeRange(start?: string | null, end?: string | null): string {
+  if (start && end) return `${fmt12(start)} – ${fmt12(end)}`
+  if (start) return `From ${fmt12(start)}`
+  if (end) return `Until ${fmt12(end)}`
+  return ''
+}
+
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const minutes = Math.floor(diff / 60000)
@@ -35,8 +49,10 @@ interface Props {
 export default function DealModal({ venue, onClose, onUpdate }: Props) {
   // — Deal state —
   const [deals, setDeals] = useState<Deal[]>(venue.deals ?? [])
-  const [selectedDay, setSelectedDay] = useState<DayOfWeek>('monday')
+  const [selectedDays, setSelectedDays] = useState<Set<DayOfWeek>>(new Set())
   const [description, setDescription] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [adding, setAdding] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [dealError, setDealError] = useState('')
@@ -93,20 +109,39 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
   }, [onClose])
 
   // — Deal handlers —
+  const toggleDay = (day: DayOfWeek) => {
+    setSelectedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return next
+    })
+  }
+
   const handleAddDeal = async () => {
     if (!description.trim()) { setDealError('Please enter a deal description'); return }
+    if (selectedDays.size === 0) { setDealError('Select at least one day'); return }
     setAdding(true)
     setDealError('')
     try {
       const res = await fetch('/api/deals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venue_id: venue.id, day_of_week: selectedDay, description: description.trim() }),
+        body: JSON.stringify({
+          venue_id: venue.id,
+          days: [...selectedDays],
+          description: description.trim(),
+          start_time: startTime || null,
+          end_time: endTime || null,
+        }),
       })
       if (!res.ok) throw new Error('Failed')
-      const newDeal: Deal = await res.json()
-      setDeals((prev) => [...prev, newDeal])
+      const newDeals: Deal[] = await res.json()
+      setDeals((prev) => [...prev, ...newDeals])
       setDescription('')
+      setSelectedDays(new Set())
+      setStartTime('')
+      setEndTime('')
       onUpdate()
     } catch {
       setDealError('Failed to add deal — please try again.')
@@ -237,7 +272,14 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
                 <div className="space-y-2">
                   {dayDeals.map((deal) => (
                     <div key={deal.id} className="flex items-start gap-2 group">
-                      <p className="flex-1 text-sm text-slate-200 leading-snug">{deal.description}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-200 leading-snug">{deal.description}</p>
+                        {timeRange(deal.start_time, deal.end_time) && (
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            🕐 {timeRange(deal.start_time, deal.end_time)}
+                          </p>
+                        )}
+                      </div>
                       <button
                         onClick={() => handleDeleteDeal(deal.id)}
                         disabled={deletingId === deal.id}
@@ -390,38 +432,67 @@ export default function DealModal({ venue, onClose, onUpdate }: Props) {
           <p className="text-xs text-slate-500 uppercase tracking-widest font-medium mb-3">
             Add a deal
           </p>
+
+          {/* Day multi-select */}
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {DAYS.map((day) => (
-              <button
-                key={day.key}
-                onClick={() => setSelectedDay(day.key)}
-                className={`
-                  px-2.5 py-1 rounded-md text-xs font-semibold transition-all
-                  ${selectedDay === day.key
-                    ? `${day.activeClass} ring-2 ring-white/20 scale-105`
-                    : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'
-                  }
-                `}
-              >
-                {day.label.slice(0, 3)}
-              </button>
-            ))}
+            {DAYS.map((day) => {
+              const active = selectedDays.has(day.key)
+              return (
+                <button
+                  key={day.key}
+                  onClick={() => toggleDay(day.key)}
+                  className={`
+                    px-2.5 py-1 rounded-md text-xs font-semibold transition-all
+                    ${active
+                      ? `${day.activeClass} ring-2 ring-white/20 scale-105`
+                      : 'bg-slate-800 text-slate-500 hover:bg-slate-700 hover:text-slate-300'
+                    }
+                  `}
+                >
+                  {day.label.slice(0, 3)}
+                </button>
+              )
+            })}
           </div>
+
+          {/* Time range (optional) */}
+          <div className="flex gap-2 mb-3">
+            <div className="flex-1">
+              <label className="text-xs text-slate-600 mb-1 block">From (optional)</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 focus:border-amber-500/50 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-colors [color-scheme:dark]"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-slate-600 mb-1 block">To (optional)</label>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 focus:border-amber-500/50 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-colors [color-scheme:dark]"
+              />
+            </div>
+          </div>
+
+          {/* Description */}
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddDeal() } }}
-            placeholder="e.g. 2-for-1 cocktails 5–8pm, 50% off food, happy hour all night…"
+            placeholder="e.g. 2-for-1 cocktails, 50% off food, happy hour…"
             rows={2}
             className="w-full bg-slate-800 border border-slate-700 focus:border-amber-500/50 text-white placeholder-slate-600 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 resize-none transition-colors"
           />
           {dealError && <p className="text-red-400 text-xs mt-1.5">{dealError}</p>}
           <button
             onClick={handleAddDeal}
-            disabled={adding || !description.trim()}
+            disabled={adding || !description.trim() || selectedDays.size === 0}
             className="mt-3 w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-xl text-sm transition-all shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30"
           >
-            {adding ? 'Adding…' : 'Add Deal'}
+            {adding ? 'Adding…' : selectedDays.size > 1 ? `Add Deal (${selectedDays.size} days)` : 'Add Deal'}
           </button>
         </div>
       </div>
