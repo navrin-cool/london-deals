@@ -25,7 +25,12 @@ export default function Home() {
   const [toast, setToast] = useState<string | null>(null)
   const [modalVenue, setModalVenue] = useState<Venue | null>(null)
   const [focusVenue, setFocusVenue] = useState<SearchResult | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Open sidebar by default on desktop after hydration
+  useEffect(() => {
+    if (window.innerWidth >= 768) setSidebarOpen(true)
+  }, [])
 
   const HAGGERSTON = { lat: 51.5393, lng: -0.0762 }
   const [mapCenter, setMapCenter]   = useState(HAGGERSTON)
@@ -154,23 +159,51 @@ export default function Home() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950">
-      {/* Sidebar */}
+
+      {/* Mobile backdrop — closes sidebar when tapped */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar
+          Mobile:  fixed overlay, slides in/out with translate-x
+          Desktop: flex item, collapses with width transition            */}
       <div
         className={`
-          flex-shrink-0 flex flex-col bg-slate-900 border-r border-slate-800 z-10 shadow-2xl
+          flex flex-col bg-slate-900 border-r border-slate-800 shadow-2xl
+          fixed inset-y-0 left-0 z-50 w-80 max-w-[90vw]
           transition-all duration-300
-          ${sidebarOpen ? 'w-80' : 'w-0 overflow-hidden'}
+          md:relative md:inset-auto md:z-10 md:flex-shrink-0
+          ${sidebarOpen
+            ? 'translate-x-0 md:w-80'
+            : '-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden'
+          }
         `}
       >
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex-shrink-0">
-          <h1 className="text-lg font-bold text-white flex items-center gap-2">
-            <span className="text-2xl">🍺</span>
-            London Deals
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Find &amp; share pub, bar &amp; restaurant deals
-          </p>
+        <div className="p-4 border-b border-slate-800 flex-shrink-0 flex items-start justify-between gap-2">
+          <div>
+            <h1 className="text-lg font-bold text-white flex items-center gap-2">
+              <span className="text-2xl">🍺</span>
+              London Deals
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Find &amp; share pub, bar &amp; restaurant deals
+            </p>
+          </div>
+          {/* Close button — mobile only */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden flex-shrink-0 text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors mt-0.5"
+            aria-label="Close menu"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* DB setup warning */}
